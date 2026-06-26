@@ -1,0 +1,231 @@
+---
+title: "Praktikum 5 Anreg"
+author: "Kholishotur Rofi'ah"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown
+---
+
+# Library
+
+```{r}
+library(readxl) # untuk membaca data
+library(GGally) # untuk menghasilkan matriks hubungan antarpeubah
+library(corrplot) # untuk menghasilkan matriks korelasi
+library(dplyr) # untuk manipulasi data
+library(car) # untuk memeriksa multikolinearitas
+```
+
+# Data
+
+```{r}
+data <- read_excel("C:\\Users\\ASUS\\Downloads\\Sosial-Ekonomi mempengaruhi Tingkat Perceraian 2024.xlsx")
+head(data) # menampilkan sekian data awal
+str(data) # menampilkan tipe data setiap peubah
+summary(data) # menampilkan ringkasan data
+```
+
+Data yang digunakan adalah data dari 38 Provinsi di Indonesia pada Tahun 2024 dengan 1 peubah respon yaitu Rasio Cerai dan 5 peubah penjelas yang terdiri dari rata-rata lama sekolah (RLS), persentase tingkat pengangguran terbuka (TPT), Produk Domestik Regional Bruto (PDRB), kepadatan penduduk (KP), dan presentase penduduk miskin (PPM).
+
+Untuk mempermudah dalam komputasi, karena peubah provinsi tidak digunakan, maka dapat dihapus.
+```{r}
+data <- select(data, -Provinsi)
+```
+
+# Eksplorasi data
+
+```{r}
+hist(data$Cerai, main = "Sebaran Rasio Cerai")
+```
+
+```{r}
+boxplot(data$Cerai, main = "Sebaran Rasio Cerai")
+```
+
+```{r}
+ggpairs(data,
+        upper = list(continuous = wrap('cor', size = 3)),
+        title = "Matriks Scatterplot Data")
+
+```
+
+```{r}
+cor_matrix <- cor(data, use = "complete.obs")
+
+corrplot(cor_matrix, method = "color", type = "lower",
+         col = colorRampPalette(c("red", "white", "blue"))(200),
+         addCoef.col = "black", tl.col = "black", tl.srt = 35)
+```
+
+Hasil matriks scatter plot dan korelasi menunjukkan bahwa peubah respon Cerai memiliki hubungan positif dengan RLS, TPT, PDRB, dan KP, serta hubungan negatif dengan PPM.
+
+Selain itu, terdapat beberapa korelasi antar peubah penjelas yang bernilai cukup tinggi. Beberapa di antaranya adalah:
+
+RLS dan TPT memiliki korelasi sebesar 0,57.
+RLS dan PDRB memiliki korelasi sebesar 0,50.
+Cerai dan KP memiliki korelasi sebesar 0,42.
+
+Korelasi antar peubah penjelas pada data ini relatif sedang dan belum menunjukkan adanya korelasi yang sangat kuat (mendekati ±0,8). Dengan demikian, potensi multikolinearitas antar peubah penjelas relatif lebih kecil, meskipun tetap perlu dikonfirmasi melalui pengujian lanjutan, seperti menggunakan Variance Inflation Factor (VIF).
+
+
+# Pemodelan
+
+## Tanpa Fungsi
+
+Perhitungan nilai $\hat{\beta}$ secara matriks dapat dilakukan dengan rumus berikut.
+
+$$\hat{\beta} = (X'X)^{-1} X'y$$
+
+```{r}
+# pembentukan matriks
+n <- nrow(data)
+x0 <- rep(1,n)
+x <- data.frame(x0, data$RLS, data$TPT, data$PDRB, data$KP, data$PPM)
+x <- as.matrix(x)
+y <- data$Cerai
+```
+
+```{r}
+beta_duga <- solve(t(x)%*%x)%*%t(x)%*%y
+beta_duga
+```
+
+Hasil tersebut menjelaskan bahwa persamaan yang terbentuk adalah
+$$\hat{Cerai}=0.76597−0.0904RLS+0.0246TPT+0.1046PDRB+0.0679KP−0.0473PPM$$
+Selang kepercayaan dan pengujian signifikansi setiap parameter dapat dilakukan dengan menghitung keragaman tiap dugaan parameter. Secara umum, nilai ragam dugaan parameter $\hat{\beta}_j$ dapat dihitung melalui rumus berikut.
+
+$$Var(\hat{\beta}_j) = \hat{\sigma}^2 C_{jj}$$
+Dengan matriks $C$ adalah matriks $(X'X)^{-1}$ 
+
+```{r}
+c <- data.frame(solve(t(x)%*%x))
+```
+
+Unsur diagonal dari matriks $C$ dapat digunakan untuk menghitung nilai galat baku dari setiap dugaan parameter. Galat baku ini dapat digunakan untuk menghitung selang kepercayaan dari dugaan yang dihasilkan.
+
+$$SE(\hat{\beta}_j) = \sqrt{Var(\hat{\beta}_j)} = \sqrt{\sigma^2 C_{jj}} = \hat{\sigma}\sqrt{c_{ii}}$$
+
+Misal ingin dihitung selang kepercayaan dari dugaan parameter $\beta_2$, maka
+
+```{r}
+y_hat <- x %*% beta_duga
+residuals <- y - y_hat
+n <- nrow(x)
+p <- ncol(x)
+KTG <- sum(residuals^2) / (n - p) 
+
+c22 <- c[2,2]
+
+(se.b2 <- sqrt(KTG*c22))
+```
+
+```{r}
+alfa <- 0.05
+
+#Batas Bawah beta2
+(bb.b2 <- beta_duga[3,1] - abs(qt(alfa/2, df=n-p))*se.b2)
+```
+
+```{r}
+#Batas Atas beta2
+(ba.b2 <- beta_duga[3,1] + abs(qt(alfa/2, df=n-p))*se.b2)
+```
+
+Dengan demikian, kita dapat ketahui selang kepercayaan untuk $\hat{\beta}_2$ sebagai berikut.
+$$−0.1726<\hat{\beta}_2<0.2218$$
+
+Pada kasus selang kepercayaan $\hat{\beta}_2$ di atas, didapati bahwa dugaan parameter berada dalam rentang yang mengandung nilai 0. Dengan demikian, dapat dimaknai bahwa diduga nilai parameter $\hat{\beta}_2$ bernilai 0 atau tidak signifikan dalam taraf nyata 5%, sehingga belum terdapat bukti yang cukup bahwa peubah yang berkaitan dengan $\hat{\beta}_2$ berpengaruh secara signifikan terhadap peubah respon.
+
+
+# Dengan Fungsi
+
+```{r}
+model1 <- lm(formula = Cerai ~ ., data = data)
+summary(model1)
+```
+Dugaan parameter model yang diperoleh menggunakan perhitungan matriks dan fungsi lm() menghasilkan nilai yang sama, sehingga dapat disimpulkan bahwa perhitungan yang dilakukan sudah tepat. Berdasarkan ringkasan model, terdapat satu peubah yang signifikan pada taraf nyata 5%, yaitu PPM, dengan nilai p-value sebesar 0,00604 (< 0,05). Hal ini menunjukkan bahwa peubah PPM berpengaruh signifikan terhadap peubah respon Cerai, dengan koefisien regresi sebesar -0,04732, sehingga setiap kenaikan satu satuan PPM diperkirakan akan menurunkan nilai Cerai sebesar 0,04732 satuan, dengan asumsi peubah lain konstan.
+
+Sementara itu, peubah RLS, TPT, PDRB, dan KP memiliki nilai p-value lebih besar dari 0,05 sehingga tidak berpengaruh signifikan secara parsial terhadap peubah respon.
+
+Secara simultan, model regresi signifikan dengan nilai p-value uji F sebesar 0,00346, yang lebih kecil dari taraf nyata 5%. Hal ini menunjukkan bahwa variabel-variabel penjelas secara bersama-sama berpengaruh terhadap peubah respon. Selain itu, model memiliki nilai Adjusted R Square sebesar 0,3177, yang berarti sekitar 31,77% variasi pada peubah Cerai dapat dijelaskan oleh variabel RLS, TPT, PDRB, KP, dan PPM, sedangkan 68,23% sisanya dijelaskan oleh faktor-faktor lain di luar model.
+
+
+# Pemeriksaan Multikoliniearitas
+
+```{r}
+vif(model1)
+```
+
+Hasil uji Variance Inflation Factor (VIF) menunjukkan bahwa seluruh peubah penjelas memiliki nilai VIF yang relatif rendah. Seluruh nilai VIF tersebut berada di bawah batas umum 10 (bahkan di bawah 5), sehingga tidak terdapat indikasi terjadinya multikolinearitas antar peubah penjelas. Dengan demikian, model regresi yang diperoleh telah memenuhi asumsi bebas multikolinearitas dan seluruh variabel dapat dipertahankan dalam model. Namun seluruh parameter masih tidak signifikan, padahal secara simultan model ini sudah signifikan. Artinya ada permasalahan lain yang mungkin belum tertangani, perlu dilakuan uji asumsi dan pemeriksaan pencilan, leverage, dan amatan berpengaruh
+
+
+# Uji Hipotesis Kesamaan Parameter Regresi
+
+Misal ingin dilakukan pemodelan dengan peubah respon Rasio Cerai dengan 3 peubah penjelas, yaitu PPM, KP, PDRB
+
+```{r}
+model2 <- lm(Cerai ~ PPM + KP + PDRB, data = data)
+summary(model2)
+```
+
+```{r}
+vif(model2)
+```
+
+Regresi yang dihasilkan tidak mengalami masalah multikolinearitas. Hasil tersebut menunjukkan bahwa peubah PPM signifikan pada taraf nyata 5%, sedangkan KP dan PDRB tidak signifikan. Berikut adalah persamaan yang terbentuk:
+
+$$\hat{PPM}=0.4996−0.0398PPM+0.0632KP+0.0611PDRB$$
+
+Hasil pemodelan tersebut dapat dilakukan serangkaian uji untuk memeriksa apakah $β_2$dan $β_3$ dapat diasumsikan sama ketika parameter lainnya tidak signifikan atau diasumsikan sama dengan nol.
+
+Hipotesis yang diuji adalah
+
+$$H_0: β2=β3$$
+$$H_1: β2≠β3$$
+
+Karena peubah KP dan PDRB tidak signifikan namun koefisiennya sangat mirip (0.0632 ≈ 0.0611), maka diuji apakah keduanya dapat digabung. Jika $β_2 = β_3 = β₁'$, model dapat ditulis ulang sebagai:
+$$Cerai=β_0+β_1PPM+β_1′(KP+PDRB)+ε$$
+```{r}
+# Buat peubah baru
+data$X_new <- data$KP + data$PDRB
+
+# Model penuh (Full Model)
+model_full <- lm(Cerai ~ PPM + KP + PDRB, data = data)
+
+# Model terbatas (Restricted Model)
+model_restricted <- lm(Cerai ~ PPM + X_new, data = data)
+
+# Bandingkan dengan Uji F
+anova(model_restricted, model_full)
+```
+
+Hasil perbandingan menunjukkan bahwa nilai p (0.9875) lebih besar dari alpha (0.05) sehingga gagal tolak H₀, artinya peubah KP dan PDRB tidak berbeda secara signifikan dan dapat digabung. Selanjutnya dapat dipilih apakah akan menggunakan model penuh (KP + PDRB terpisah) atau model terbatas (KP + PDRB digabung) berdasarkan indikator Adjusted R-Squared, AIC, dan BIC.
+
+
+```{r}
+perbandingan <- data.frame(
+  Model = c("Peubah Penuh", "Peubah Digabung"),
+  Adjusted_R2 = as.numeric(c(summary(model_full)$adj.r.squared, 
+                              summary(model_restricted)$adj.r.squared)),
+  AIC = as.numeric(c(AIC(model_full), AIC(model_restricted))),
+  BIC = as.numeric(c(BIC(model_full), BIC(model_restricted)))
+)
+perbandingan
+```
+
+Berdasarkan indikator Adjusted R square, AIC, dan BIC, model dengan peubah digabung (KP + PDRB) dipilih sebagai model terbaik karena memiliki Adjusted R square yang lebih tinggi serta nilai AIC dan BIC yang lebih kecil. Persamaan yang terbentuk adalah:
+
+$$\hat{Cerai}=β_0+β_1PPM+β_1′(KP+PDRB)$$
+
+```{r}
+summary(model_restricted)
+```
+
+Berdasarkan indikator Adjusted R², AIC, dan BIC, model dengan peubah digabung dipilih sebagai model terbaik. Persamaan yang terbentuk adalah sebagai berikut:
+
+$$\hat{Cerai}= 0.4777-0.0397PPM+0.0631(KP+PDRB)$$
+
+Interpretasi:\
+1. Dugaan rata-rata angka perceraian jika PPM, KP, dan PDRB bernilai 0 adalah 0.4777\
+2. Dugaan rata-rata angka perceraian akan menurun sebesar 0.0397 apabila persentase penduduk miskin meningkat satu satuan dengan asumsi KP dan PDRB konstan\
+3. Dugaan rata-rata angka perceraian akan meningkat sebesar 0.0631 apabila gabungan kepadatan penduduk dan PDRB meningkat satu satuan dengan asumsi PPM konstan\
